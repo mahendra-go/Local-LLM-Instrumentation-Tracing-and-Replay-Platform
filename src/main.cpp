@@ -1,10 +1,14 @@
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "llmtrace/event.hpp"
 #include "llmtrace/ring_buffer.hpp"
+#include "llmtrace/source.hpp"
 #include "llmtrace/topology.hpp"
+#include "llmtrace/trace_io.hpp"
 
 #ifndef LLMTRACE_VERSION
 #define LLMTRACE_VERSION "0.0.0"
@@ -64,6 +68,58 @@ int run_selftest() {
     return fails == 0 ? 0 : 1;
 }
 
+// Headless driver: pull N synthetic events through the pipeline, optionally record
+// them, print a summary. Lets us validate capture + trace I/O without a terminal.
+int run_headless_synthetic(int n, int layers, const char* record_path) {
+    using namespace llmtrace;
+    SyntheticSource src(SyntheticSource::Config{layers, /*tokens*/100, 32, 16,
+                                                4096, 11008, /*loop*/false, 7});
+    RingBuffer<LayerEvent> rb(4096);
+    Topology topo;
+    TraceWriter writer(record_path ? record_path : "");
+    int anomalies = 0;
+    LayerEvent e;
+    int count = 0;
+    for (; count < n && src.next(e); ++count) {
+        rb.push(e);
+        topo.observe(e);
+        if (record_path) writer.write(e);
+        if (e.anomaly) ++anomalies;
+    }
+    if (record_path) writer.close();
+    std::printf("captured %d events | layers=%d | anomalies=%d | ring=%zu/%zu\n",
+                count, topo.n_layers(), anomalies, rb.size(), rb.capacity());
+    if (record_path) std::printf("recorded -> %s\n", record_path);
+    return 0;
+}
+
+int run_headless_replay(const char* path) {
+    using namespace llmtrace;
+    std::vector<LayerEvent> events;
+    TraceReader reader(path);
+    if (!reader.ok() || !reader.read_all(events)) {
+        std::fprintf(stderr, "error: cannot read trace '%s'\n", path);
+        return 1;
+    }
+    Topology topo;
+    int anomalies = 0;
+    double total_lat = 0.0;
+    for (const auto& e : events) {
+        topo.observe(e);
+        if (e.anomaly) ++anomalies;
+        total_lat += e.latency_ms;
+    }
+    std::printf("replayed %zu events | layers=%d | anomalies=%d | total_latency=%.2f ms\n",
+                events.size(), topo.n_layers(), anomalies, total_lat);
+    if (!events.empty()) {
+        const auto& f = events.front();
+        std::printf("first: seq=%llu %s op=%s shape=[%lld,%lld] %s\n",
+                    (unsigned long long)f.seq, f.name.c_str(), f.op.c_str(),
+                    (long long)f.shape[0], (long long)f.shape[1], f.dtype.c_str());
+    }
+    return 0;
+}
+
 void print_usage() {
     std::printf("llmtrace %s — Local LLM Instrumentation, Tracing & Replay Platform\n\n",
                 LLMTRACE_VERSION);
@@ -78,12 +134,34 @@ void print_usage() {
 } // namespace
 
 int main(int argc, char** argv) {
+    bool headless = false, synthetic = false;
+    int n = 200, layers = 32;
+    const char* record_path = nullptr;
+    const char* replay_path = nullptr;
+
     for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--selftest") == 0) return run_selftest();
-        if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
-            print_usage();
-            return 0;
-        }
+        const char* a = argv[i];
+        auto val = [&](const char* def) -> const char* {
+            return (i + 1 < argc) ? argv[++i] : def;
+        };
+        if (std::strcmp(a, "--selftest") == 0) return run_selftest();
+        else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) { print_usage(); return 0; }
+        else if (std::strcmp(a, "--headless") == 0) headless = true;
+        else if (std::strcmp(a, "--synthetic") == 0) synthetic = true;
+        else if (std::strcmp(a, "--layers") == 0) layers = std::atoi(val("32"));
+        else if (std::strcmp(a, "--count") == 0) n = std::atoi(val("200"));
+        else if (std::strcmp(a, "--record") == 0) record_path = val(nullptr);
+        else if (std::strcmp(a, "--replay") == 0) replay_path = val(nullptr);
+    }
+
+    if (replay_path && headless) return run_headless_replay(replay_path);
+    if (synthetic && headless) return run_headless_synthetic(n, layers, record_path);
+
+    // Interactive TUI is wired in the next stage; for now guide the user.
+    if (synthetic || replay_path) {
+        std::printf("Interactive dashboard lands in the TUI stage. "
+                    "Use --headless for now (e.g. --synthetic --headless --record traces/run.trace).\n");
+        return 0;
     }
     print_usage();
     return 0;

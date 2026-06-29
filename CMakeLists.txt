@@ -15,6 +15,8 @@ add_executable(llmtrace
   src/main.cpp
   src/event.cpp
   src/topology.cpp
+  src/trace_io.cpp
+  src/source.cpp
 )
 target_include_directories(llmtrace PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_definitions(llmtrace PRIVATE LLMTRACE_VERSION="${PROJECT_VERSION}")
