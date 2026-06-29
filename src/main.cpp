@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 
+#include "llmtrace/dashboard.hpp"
 #include "llmtrace/event.hpp"
 #include "llmtrace/ring_buffer.hpp"
+#include "llmtrace/session.hpp"
 #include "llmtrace/source.hpp"
 #include "llmtrace/topology.hpp"
 #include "llmtrace/trace_io.hpp"
@@ -134,8 +136,10 @@ void print_usage() {
 } // namespace
 
 int main(int argc, char** argv) {
-    bool headless = false, synthetic = false;
-    int n = 200, layers = 32;
+    using namespace llmtrace;
+    bool headless = false, synthetic = false, preview = false;
+    int n = 200, layers = 32, seq_len = 16;
+    double speed = 1.0;
     const char* record_path = nullptr;
     const char* replay_path = nullptr;
 
@@ -147,9 +151,12 @@ int main(int argc, char** argv) {
         if (std::strcmp(a, "--selftest") == 0) return run_selftest();
         else if (std::strcmp(a, "--help") == 0 || std::strcmp(a, "-h") == 0) { print_usage(); return 0; }
         else if (std::strcmp(a, "--headless") == 0) headless = true;
+        else if (std::strcmp(a, "--preview") == 0) preview = true;
         else if (std::strcmp(a, "--synthetic") == 0) synthetic = true;
         else if (std::strcmp(a, "--layers") == 0) layers = std::atoi(val("32"));
         else if (std::strcmp(a, "--count") == 0) n = std::atoi(val("200"));
+        else if (std::strcmp(a, "--seq") == 0) seq_len = std::atoi(val("16"));
+        else if (std::strcmp(a, "--speed") == 0) speed = std::atof(val("1.0"));
         else if (std::strcmp(a, "--record") == 0) record_path = val(nullptr);
         else if (std::strcmp(a, "--replay") == 0) replay_path = val(nullptr);
     }
@@ -157,12 +164,35 @@ int main(int argc, char** argv) {
     if (replay_path && headless) return run_headless_replay(replay_path);
     if (synthetic && headless) return run_headless_synthetic(n, layers, record_path);
 
-    // Interactive TUI is wired in the next stage; for now guide the user.
-    if (synthetic || replay_path) {
-        std::printf("Interactive dashboard lands in the TUI stage. "
-                    "Use --headless for now (e.g. --synthetic --headless --record traces/run.trace).\n");
+    DashboardOptions opt;
+    opt.seq_len = seq_len;
+    opt.speed = speed;
+
+    // Build the chosen data source.
+    if (replay_path) {
+        std::vector<LayerEvent> events;
+        TraceReader reader(replay_path);
+        if (!reader.ok() || !reader.read_all(events)) {
+            std::fprintf(stderr, "error: cannot read trace '%s'\n", replay_path);
+            return 1;
+        }
+        ReplaySource src(std::move(events), /*loop*/true);
+        if (preview) { std::printf("%s\n", render_preview(src, opt, n, 120, 44).c_str()); return 0; }
+        run_dashboard(src, opt);
         return 0;
     }
+
+    if (synthetic) {
+        SyntheticSource::Config c;
+        c.layers = layers;
+        c.seq_len = seq_len;
+        c.loop = true;
+        SyntheticSource src(c);
+        if (preview) { std::printf("%s\n", render_preview(src, opt, n, 120, 44).c_str()); return 0; }
+        run_dashboard(src, opt);
+        return 0;
+    }
+
     print_usage();
     return 0;
 }
