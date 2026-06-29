@@ -12,17 +12,29 @@ later.
 ## Why
 
 Ever wondered how data propagates through the layers of a transformer? Which block
-dominates compute? Where numerical anomalies (clipping, outliers, OOM fallbacks) creep
-in? `llmtrace` answers these by observing a real inference run, op by op, and surfacing
-it in a `lazygit`/`btop`-style dashboard you navigate with the keyboard.
+dominates compute? Where numerical anomalies (clipping, outliers, NaN/Inf) creep in?
+`llmtrace` answers these by observing a real inference run, op by op, and surfacing it
+in a `lazygit`/`btop`-style dashboard you navigate with the keyboard.
+
+## Quick demo (no model needed)
+
+A recorded sample trace ships in the repo, so you can see the dashboard immediately:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+./build/llmtrace --replay examples/demo.trace        # interactive dashboard
+```
+
+A text snapshot of the dashboard lives at [`docs/dashboard.txt`](docs/dashboard.txt).
 
 ## How it stays non-invasive
 
 The capture backend uses [`llama.cpp`](https://github.com/ggml-org/llama.cpp) and
 registers a **`ggml_backend_sched_eval_callback`**. ggml invokes this callback for every
 node in the compute graph as it executes — so we read each tensor's name, op, shape,
-dtype, device and time it, **without touching model weights or model code**. Events are
-pushed into a fixed-size ring buffer so RAM stays flat regardless of run length.
+dtype, device, timing, and (for host-resident F32 tensors) **real activation statistics**,
+*without touching model weights or model code*. Events go into a fixed-size ring buffer
+so RAM stays flat regardless of run length.
 
 ```
                  model code (untouched)
@@ -40,34 +52,33 @@ pushed into a fixed-size ring buffer so RAM stays flat regardless of run length.
 
 ## Dashboard layout
 
-```
-[Tab]: Cycle Focus | [j/k]: Navigate | [Space]: Select | [+/-]: Contrast | [q]: Quit
-┌ 1. MODEL TOPOLOGY ───────┐ ┌ 2. LIVE EVENT STREAM ─────────────────────┐
-│ ▼ model                  │ │  ID  TIME         LAYER TYPE     DEVICE     │
-│   ► embeddings           │ │  104 21:14:02.110  Attn (Self)   CPU        │
-│   ▼ layers               │ │  105 21:14:02.114  MLP (SwiGLU)  CPU        │
-│     ▶ layers.1 [active]  │ │  ...                                        │
-└──────────────────────────┘ └────────────────────────────────────────────┘
-┌ 3. ATTENTION MATRIX ─────────────────┐ ┌ 4. RUNTIME METRICS ──────────────┐
-│ tokens × tokens heatmap (░▒▓█)       │ │ Shape [1,32,4096]  Dtype f16     │
-│                                      │ │ Sparsity 54.2%  Latency 1.14 ms  │
-└──────────────────────────────────────┘ └──────────────────────────────────┘
-┌ 5. NUMERICAL ANOMALY LEDGER ─────────────────────────────────────────────┐
-│ 21:14:02.114 ⚠ Outlier feature L0: max > 6.0                              │
-└───────────────────────────────────────────────────────────────────────────┘
-```
+Five panels (see [`docs/dashboard.txt`](docs/dashboard.txt) for a live snapshot):
+
+1. **Model topology** — tree built live from the event stream; `j/k` to navigate,
+   `Space` to expand/collapse, the active layer is tagged `[active]`.
+2. **Live event stream** — every captured node: id, time, layer, type, device, tensor.
+3. **Attention matrix** — causal heatmap (`+/-` adjusts contrast).
+4. **Runtime metrics** — shape, dtype, device, latency, sparsity, mean/min/max for the
+   selected layer's latest tensor.
+5. **Numerical anomaly ledger** — outliers and NaN/Inf flagged as they occur.
+
+`Tab` cycles panel focus, `q` quits.
 
 ## Build
+
+Requires CMake ≥ 3.16 and a C++17 compiler. FTXUI is fetched automatically.
 
 ```bash
 # core (TUI + synthetic/replay, no model needed)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
-# with the real llama.cpp capture backend
+# with the real llama.cpp capture backend (fetches & builds llama.cpp)
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLMTRACE_ENABLE_LLAMA=ON
 cmake --build build -j
 ```
+
+On macOS: `brew install cmake`.
 
 ## Usage
 
@@ -75,23 +86,53 @@ cmake --build build -j
 # Live demo with synthetic data (no model required)
 ./build/llmtrace --synthetic --layers 32
 
-# Capture a real run and record a trace
-./build/llmtrace --model models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-                 --prompt "Explain attention in one sentence." \
-                 --record traces/run.trace
+# Replay the bundled sample (or any recorded trace)
+./build/llmtrace --replay examples/demo.trace
 
-# Replay a recorded trace into the dashboard
+# Capture a REAL run (requires -DLLMTRACE_ENABLE_LLAMA=ON):
+./scripts/get-model.sh qwen        # downloads Qwen2.5-0.5B GGUF (~470 MB)
+./build/llmtrace --model models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+                 --prompt "Explain attention in one sentence." --predict 16
+
+# Record a real run to a trace, then replay it anywhere
+./build/llmtrace --model models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+                 --prompt "Hello" --headless --record traces/run.trace
 ./build/llmtrace --replay traces/run.trace
 ```
 
-## Status / roadmap
+Useful flags: `--layers N`, `--seq N` (attention window), `--predict N` (tokens),
+`--ngl N` (GPU layers; `0` = CPU so F32 activations are host-readable for stats),
+`--speed X` (replay pacing), `--selftest`.
+
+## Verified
+
+End-to-end on **Qwen2.5-0.5B-Instruct (Q4_K_M)**, CPU backend:
+
+- **13,974** graph nodes captured across **24 layers** in a single short run
+- real ops observed: `MUL_MAT`, `RMS_NORM`, `ROPE`, `FLASH_ATTN_EXT`, `GET_ROWS`, …
+- real activation stats per F32 tensor; genuine outliers flagged
+  (e.g. `Kcur` in layer 8 with `|val| 214.3`)
+- `--selftest` covers the ring buffer, name classifier, and topology builder
+
+## Project layout
+
+```
+include/llmtrace/   public headers (ring_buffer, event, topology, session, …)
+src/                core, trace I/O, sources, session state, dashboard
+src/capture/        llama.cpp capture backend (ggml eval callback)
+scripts/get-model.sh   fetch a small GGUF model
+examples/demo.trace    bundled sample trace (replay without a model)
+docs/dashboard.txt     text snapshot of the dashboard
+```
+
+## Status
 
 - [x] Project scaffold, CMake, ring buffer
 - [x] Event model + topology builder
 - [x] Trace format (record) + replay reader + synthetic source
 - [x] FTXUI 5-panel dashboard with keyboard navigation
-- [x] llama.cpp non-invasive capture backend (ggml eval callback)
-- [ ] Bonus: sparsity/anomaly heuristics tuning, per-head attention, GPU device tags
+- [x] llama.cpp non-invasive capture backend (ggml eval callback) — verified
+- [ ] Bonus: observed (not modelled) attention weights, per-head view, GPU device tags
 
 ## License
 

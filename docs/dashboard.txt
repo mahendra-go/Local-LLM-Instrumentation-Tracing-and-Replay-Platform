@@ -1,0 +1,44 @@
+ llmtrace  [Tab] focus  [j/k] nav  [Space] expand  [+/-] contrast  [q] qevents 480 · layers 12 · 1918 ev/s · 250.2 ms to
+╭▌1 MODEL TOPOLOGY ◂─────────────╮╭ 2 LIVE EVENT STREAM────────────────────────────────────────────────────────────────╮
+│▼ model                         ││  ID │ TIME      │ LAYER │ TYPE      │ DEVICE        │ TENSOR                       │
+│  ● embeddings                  │├────────────────────────────────────────────────────────────────────────────────────┤
+│  ▼ layers                      ││  479 │ 00:00.249 │    0  │ MLP       │ Metal         │ ffn_down-0                  │
+│    ▶ layers.0  [active]        ││  478 │ 00:00.248 │    0  │ MLP       │ Metal         │ ffn_up-0                    │
+│    ▶ layers.1                  ││  477 │ 00:00.247 │    0  │ MLP       │ Metal         │ ffn_gate-0                  │
+│    ▶ layers.2                  ││  476 │ 00:00.247 │    0  │ Norm      │ Metal         │ ffn_norm-0                  │
+│    ▶ layers.3                  ││  475 │ 00:00.246 │    0  │ Attention │ Metal         │ attn_out-0                  │
+│    ▶ layers.4                  ││  474 │ 00:00.246 │    0  │ Attention │ Metal         │ kqv-0                       │
+│    ▶ layers.5                  ││  473 │ 00:00.245 │    0  │ Attention │ Metal         │ kq_soft_max-0               │
+│    ▶ layers.6                  ││  472 │ 00:00.244 │    0  │ Attention │ Metal         │ kq-0                        │
+│    ▶ layers.7                  ││  471 │ 00:00.244 │    0  │ Attention │ Metal         │ Vcur-0                      │
+│    ▶ layers.8                  ││  470 │ 00:00.244 │    0  │ Attention │ Metal         │ Kcur-0                      │
+│    ▶ layers.9                  ││  469 │ 00:00.243 │    0  │ Attention │ Metal         │ Qcur-0                      │
+│    ▶ layers.10                 ││  468 │ 00:00.243 │    0  │ Norm      │ Metal         │ attn_norm-0                 │
+│    ▶ layers.11                 ││  467 │ 00:00.243 │   11  │ Other     │ Metal         │ l_out-11                    │
+│  ● output                      ││  466 │ 00:00.242 │   11  │ MLP       │ Metal         │ ffn_down-11                 │
+│                                ││  465 │ 00:00.241 │   11  │ MLP       │ Metal         │ ffn_up-11                   │
+│                                ││  464 │ 00:00.240 │   11  │ MLP       │ Metal         │ ffn_gate-11                 │
+│                                ││  463 │ 00:00.240 │   11  │ Norm      │ Metal         │ ffn_norm-11                 │
+│                                ││  462 │ 00:00.239 │   11  │ Attention │ Metal         │ attn_out-11                 │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────────────╯
+╭ 3 ATTENTION MATRIX───────────────────────────────────────────────────────╮╭ 4 RUNTIME METRICS────────────────────────╮
+│layer 0 · query↓ key→ · causal                                            ││Layer / op    L0  ffn_down-0              │
+│ 0 ██                                                                     ││ggml op       MUL_MAT                     │
+│ 1 ▒▒▓▓                                                                   ││Tensor shape  [4096,16]                   │
+│ 2 ▒▒▒▒▓▓                                                                 ││Dtype         f16                         │
+│ 3 ░░░░▒▒▒▒                                                               ││Device        Metal                       │
+│ 4 ░░░░░░▒▒▒▒                                                             ││Latency       1.304 ms                    │
+│ 5 ░░░░░░░░▒▒▒▒                                                           ││Sparsity      ████████████▍    77.8%      │
+│ 6 ░░░░░░░░░░▒▒▒▒                                                         ││mean/min/max  0.180 / -0.56 / 2.593       │
+│ 7     ░░░░░░░░▒▒▒▒                                                       ││                                          │
+│ 8       ░░░░░░░░▒▒▒▒                                                     ││                                          │
+╰──────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────╯
+╭ 5 NUMERICAL ANOMALY LEDGER───────────────────────────────────────────────────────────────────────────────────────────╮
+│00:00.233 ⚠ Outlier feature L10: max 6.37 > 6.0                                                                       │
+│00:00.232 ⚠ Outlier feature L10: max 6.38 > 6.0                                                                       │
+│00:00.220 ⚠ Outlier feature L8: max 6.08 > 6.0                                                                        │
+│00:00.220 ⚠ Outlier feature L8: max 6.44 > 6.0                                                                        │
+│00:00.218 ⚠ Outlier feature L8: max 6.13 > 6.0                                                                        │
+│00:00.212 ⚠ Outlier feature L7: max 6.17 > 6.0                                                                        │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
