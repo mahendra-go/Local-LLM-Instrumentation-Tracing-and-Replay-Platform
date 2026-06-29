@@ -13,6 +13,8 @@ option(LLMTRACE_ENABLE_LLAMA "Build the llama.cpp capture backend" OFF)
 
 add_executable(llmtrace
   src/main.cpp
+  src/event.cpp
+  src/topology.cpp
 )
 target_include_directories(llmtrace PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_definitions(llmtrace PRIVATE LLMTRACE_VERSION="${PROJECT_VERSION}")
