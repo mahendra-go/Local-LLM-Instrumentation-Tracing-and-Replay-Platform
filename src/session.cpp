@@ -42,8 +42,12 @@ void SessionState::ingest(const LayerEvent& e) {
     if (e.layer >= 0) {
         active_layer_ = e.layer;
         last_by_layer_[e.layer] = e;
-        // Refresh the attention matrix when we cross the attention softmax of a layer.
-        if (e.op_class == OpClass::Attention && e.name.find("soft_max") != std::string::npos) {
+        // Refresh the attention matrix when we cross a layer's attention step. Handles
+        // both explicit softmax graphs and fused flash-attention (FLASH_ATTN_EXT).
+        if (e.op_class == OpClass::Attention &&
+            (e.name.find("soft_max") != std::string::npos ||
+             e.name.find("fattn") != std::string::npos ||
+             e.name.find("kqv_out") != std::string::npos)) {
             attn_[e.layer] = make_attention(e.layer);
             last_attn_layer_ = e.layer;
         }

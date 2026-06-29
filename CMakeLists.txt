@@ -41,3 +41,20 @@ target_link_libraries(llmtrace PRIVATE
   ftxui::screen ftxui::dom ftxui::component
   Threads::Threads
 )
+
+if(LLMTRACE_ENABLE_LLAMA)
+  set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
+  set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(llama
+    GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+    GIT_TAG b9842
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(llama)
+  target_sources(llmtrace PRIVATE src/capture/llama_capture.cpp)
+  target_link_libraries(llmtrace PRIVATE llama)
+  target_compile_definitions(llmtrace PRIVATE LLMTRACE_ENABLE_LLAMA=1)
+endif()

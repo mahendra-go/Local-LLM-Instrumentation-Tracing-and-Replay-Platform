@@ -6,6 +6,9 @@
 
 #include "llmtrace/dashboard.hpp"
 #include "llmtrace/event.hpp"
+#ifdef LLMTRACE_ENABLE_LLAMA
+#include "llmtrace/llama_capture.hpp"
+#endif
 #include "llmtrace/ring_buffer.hpp"
 #include "llmtrace/session.hpp"
 #include "llmtrace/source.hpp"
@@ -138,10 +141,12 @@ void print_usage() {
 int main(int argc, char** argv) {
     using namespace llmtrace;
     bool headless = false, synthetic = false, preview = false;
-    int n = 200, layers = 32, seq_len = 16;
+    int n = 200, layers = 32, seq_len = 16, n_predict = 24, n_gpu_layers = 0;
     double speed = 1.0;
     const char* record_path = nullptr;
     const char* replay_path = nullptr;
+    const char* model_path = nullptr;
+    const char* prompt = "The capital of France is";
 
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];
@@ -159,6 +164,10 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--speed") == 0) speed = std::atof(val("1.0"));
         else if (std::strcmp(a, "--record") == 0) record_path = val(nullptr);
         else if (std::strcmp(a, "--replay") == 0) replay_path = val(nullptr);
+        else if (std::strcmp(a, "--model") == 0) model_path = val(nullptr);
+        else if (std::strcmp(a, "--prompt") == 0) prompt = val(prompt);
+        else if (std::strcmp(a, "--predict") == 0) n_predict = std::atoi(val("24"));
+        else if (std::strcmp(a, "--ngl") == 0) n_gpu_layers = std::atoi(val("0"));
     }
 
     if (replay_path && headless) return run_headless_replay(replay_path);
@@ -180,6 +189,40 @@ int main(int argc, char** argv) {
         if (preview) { std::printf("%s\n", render_preview(src, opt, n, 120, 44).c_str()); return 0; }
         run_dashboard(src, opt);
         return 0;
+    }
+
+    if (model_path) {
+#ifdef LLMTRACE_ENABLE_LLAMA
+        CaptureConfig cc;
+        cc.model_path = model_path;
+        cc.prompt = prompt;
+        cc.n_predict = n_predict;
+        cc.n_gpu_layers = n_gpu_layers;
+        cc.seq_len = seq_len;
+        LlamaCaptureSource src(cc);
+
+        if (headless) {  // drain the whole run, optionally record a trace
+            TraceWriter writer(record_path ? record_path : "");
+            int count = 0, anomalies = 0;
+            LayerEvent e;
+            while (src.next(e)) {
+                if (record_path) writer.write(e);
+                if (e.anomaly) ++anomalies;
+                ++count;
+            }
+            if (record_path) writer.close();
+            if (!src.ok()) { std::fprintf(stderr, "capture error: %s\n", src.error().c_str()); return 1; }
+            std::printf("captured %d events | anomalies=%d%s%s\n", count, anomalies,
+                        record_path ? " | recorded -> " : "", record_path ? record_path : "");
+            return 0;
+        }
+        run_dashboard(src, opt);
+        if (!src.ok()) { std::fprintf(stderr, "capture error: %s\n", src.error().c_str()); return 1; }
+        return 0;
+#else
+        std::fprintf(stderr, "error: rebuild with -DLLMTRACE_ENABLE_LLAMA=ON to capture a model.\n");
+        return 1;
+#endif
     }
 
     if (synthetic) {
