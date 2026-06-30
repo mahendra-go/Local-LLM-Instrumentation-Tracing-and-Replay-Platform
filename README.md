@@ -124,16 +124,3 @@ scripts/get-model.sh   fetch a small GGUF model
 examples/demo.trace    bundled sample trace (replay without a model)
 docs/dashboard.txt     text snapshot of the dashboard
 ```
-
-## Status
-
-- [x] Project scaffold, CMake, ring buffer
-- [x] Event model + topology builder
-- [x] Trace format (record) + replay reader + synthetic source
-- [x] FTXUI 5-panel dashboard with keyboard navigation
-- [x] llama.cpp non-invasive capture backend (ggml eval callback) — verified
-- [ ] Bonus: observed (not modelled) attention weights, per-head view, GPU device tags
-
-## License
-
-MIT — see [LICENSE](LICENSE).
